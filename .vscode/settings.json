@@ -1,0 +1,10 @@
+{
+  "dart.flutterSdkPath": "/Users/curtispritchard/fvm/default",
+  "dart.flutterHotReloadOnSave": "all",
+  "debug.toolBarLocation": "floating",
+  "[dart]": {
+    "editor.defaultFormatter": "Dart-Code.dart-code",
+    "editor.formatOnSave": true,
+    "editor.formatOnSaveMode": "file"
+  }
+}
