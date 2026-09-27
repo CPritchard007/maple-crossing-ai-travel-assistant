@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:maplibre/maplibre.dart';
 
-/// Renders supplied road geometry with the shared pulsing red theme.
+/// Renders supplied road geometry with the shared neon-tube theme.
 /// Coordinates use longitude, latitude order. Dispose with the owning widget.
 class RoadHighlightService extends ChangeNotifier {
   RoadHighlightService({
@@ -11,7 +11,7 @@ class RoadHighlightService extends ChangeNotifier {
     setRoad(road);
     _pulse = AnimationController(
       vsync: vsync,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 1800),
     )..addListener(notifyListeners);
     _pulse.repeat(reverse: true);
   }
@@ -57,27 +57,30 @@ class RoadHighlightService extends ChangeNotifier {
     return Position((west + east) / 2, (south + north) / 2);
   }
 
+  double get pulse => Curves.easeInOut.transform(_pulse.value);
+
   List<PolylineLayer> get layers {
-    final pulse = Curves.easeInOut.transform(_pulse.value);
     return [
-      PolylineLayer(
+      // Wide, diffuse light spill, with a fixed footprint as brightness breathes.
+      NeonRoadLayer(
         polylines: [_road],
-        color: _color.withValues(alpha: 0.10 + pulse * 0.18),
-        width: (45 + pulse * 30).round(),
+        color: _color.withValues(alpha: 0.18 + pulse * 0.08),
+        width: 34,
+        blur: 24,
       ),
-      PolylineLayer(
+      NeonRoadLayer(
         polylines: [_road],
-        color: _color.withValues(alpha: 0.25 + pulse * 0.30),
-        width: (25 + pulse * 12).round(),
+        color: _color.withValues(alpha: 0.48 + pulse * 0.14),
+        width: 17,
+        blur: 10,
       ),
-      PolylineLayer(
+      NeonRoadLayer(polylines: [_road], color: _color, width: 7, blur: 2),
+      // A continuous near-white filament keeps the tube crisp and readable.
+      NeonRoadLayer(
         polylines: [_road],
-        color: Color.lerp(
-          _color,
-          Color.lerp(_color, Colors.white, 0.45)!,
-          pulse,
-        )!,
-        width: 13,
+        color: Color.lerp(_color, Colors.white, 0.82 + pulse * 0.08)!,
+        width: 3,
+        blur: 1,
       ),
     ];
   }
@@ -87,4 +90,24 @@ class RoadHighlightService extends ChangeNotifier {
     _pulse.dispose();
     super.dispose();
   }
+}
+
+/// PolylineLayer 0.2.2 omits its blur property from the generated paint.
+/// Apply it explicitly and round joins/caps so the road reads as a light tube.
+class NeonRoadLayer extends PolylineLayer {
+  const NeonRoadLayer({
+    required super.polylines,
+    required super.color,
+    required super.width,
+    required super.blur,
+  });
+
+  @override
+  Map<String, Object> getPaint() => {...super.getPaint(), 'line-blur': blur};
+
+  @override
+  Map<String, Object> getLayout() => {
+    'line-cap': 'round',
+    'line-join': 'round',
+  };
 }

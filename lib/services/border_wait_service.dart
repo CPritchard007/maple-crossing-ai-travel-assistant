@@ -67,7 +67,7 @@ class BorderWaitService extends ChangeNotifier {
 
   WaitReading reading(BorderEntrance entrance) {
     final slug = slugs[entrance.crossingId];
-    final key = switch (entrance.destinationCountry) {
+    final key = switch (entrance.travelDestinationCountry) {
       'CA' => 'into_canada',
       'US' => 'into_us',
       _ => null,

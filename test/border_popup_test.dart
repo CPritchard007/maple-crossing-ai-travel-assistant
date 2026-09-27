@@ -28,7 +28,7 @@ void main() {
       ),
     );
     expect(find.text('Detroit–Windsor Tunnel'), findsOneWidget);
-    expect(find.text('US → Canada'), findsOneWidget);
+    expect(find.text('Canada → US'), findsOneWidget);
     expect(find.text('—'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -48,7 +48,7 @@ void main() {
       destinationCountry: 'US',
       waitMinutes: 12,
     );
-    expect(known.direction, 'Canada → US');
+    expect(known.direction, 'US → Canada');
     expect(known.durationLabel, '12 min wait');
   });
 }

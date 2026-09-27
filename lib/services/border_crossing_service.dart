@@ -197,11 +197,20 @@ class BorderEntrance {
   final String name;
   final String crossingId;
   final Position position;
+
+  /// Inspection-site country in the source data, not the popup travel destination.
   final String? destinationCountry;
   final int? waitMinutes;
   final bool historical;
 
-  String get direction => switch (destinationCountry) {
+  /// Popups describe a trip starting on the marker's side of the border.
+  String? get travelDestinationCountry => switch (destinationCountry) {
+    'US' => 'CA',
+    'CA' => 'US',
+    _ => null,
+  };
+
+  String get direction => switch (travelDestinationCountry) {
     'CA' => 'US → Canada',
     'US' => 'Canada → US',
     _ => 'US ↔ Canada',

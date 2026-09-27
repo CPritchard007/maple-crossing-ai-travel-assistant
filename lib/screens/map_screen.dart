@@ -5,13 +5,16 @@ import 'package:maplibre/maplibre.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../components/overlay.dart';
+import '../components/location_arrow.dart';
 import '../components/action_command_form.dart';
 import '../components/support_button.dart';
 import '../components/build_notice.dart';
 import '../components/border_popups.dart';
 import '../data/lauzon_road.dart';
 import '../services/road_highlight_service.dart';
+import '../services/road_closure_service.dart';
 import '../services/action_service.dart';
+import '../services/user_location_service.dart';
 import '../services/border_crossing_service.dart';
 import '../services/border_wait_service.dart';
 import '../services/viewport_geohash_service.dart';
@@ -28,11 +31,15 @@ class MapScreen extends StatefulWidget {
     this.initialPitch = 55,
     this.mapBuilder,
     this.actions,
+    this.locateUser,
   });
 
   /// Road to highlight. Defaults to the bundled Lauzon Road segment.
   final LineString? road;
   final ActionService? actions;
+
+  @visibleForTesting
+  final Future<LatLng?> Function()? locateUser;
   final VoidCallback? onReady;
 
   /// Use this to query data for the current screen's geohash cells.
@@ -62,6 +69,37 @@ class _MapScreenState extends State<MapScreen>
   late void Function() _detachActions;
   final _styleReady = Completer<void>();
   GeoAction? _geoAction;
+  final _location = UserLocationService();
+  final _closures = RoadClosureService();
+  LatLng? _userPosition;
+  bool _returningHome = false;
+  Future<LatLng?>? _initialLocation;
+
+  Future<void> _locateAtStartup() async {
+    final position = await _initialLocation;
+    if (!mounted || position == null) return;
+    setState(() => _userPosition = position);
+    if (!_actions.isRunning && _geoAction == null) await _positionRoad();
+  }
+
+  Future<void> _returnToUser() async {
+    if (_initialLocation == null) return;
+    final position = await (widget.locateUser?.call() ?? _location.locate());
+    if (!mounted) return;
+    final target = position ?? _userPosition;
+    if (target == null) return;
+    setState(() {
+      _userPosition = target;
+      _geoAction = null;
+      _returningHome = true;
+    });
+    try {
+      await _positionRoad();
+    } finally {
+      _returningHome = false;
+    }
+  }
+
   ActionService get _actions => widget.actions ?? actionService;
 
   Color _statusColor(GeoStatus status) => switch (status) {
@@ -124,7 +162,7 @@ class _MapScreenState extends State<MapScreen>
     if (mounted) _scheduleViewportUpdate();
   }
 
-  List<CircleLayer> get _actionPoints {
+  List<Marker> get _actionPoints {
     final action = _geoAction;
     if (action == null ||
         action.highlight == GeoHighlight.none ||
@@ -132,11 +170,13 @@ class _MapScreenState extends State<MapScreen>
       return [];
     }
     final p = action.coordinates.single;
+    final size = action.highlight == GeoHighlight.destination ? 72.0 : 56.0;
     return [
-      CircleLayer(
-        points: [Point(coordinates: Position(p.longitude, p.latitude))],
-        color: _statusColor(action.status),
-        radius: action.highlight == GeoHighlight.destination ? 30 : 20,
+      Marker(
+        point: Position(p.longitude, p.latitude),
+        size: Size.square(size),
+        alignment: Alignment.bottomCenter,
+        child: LocationArrow(color: _statusColor(action.status)),
       ),
     ];
   }
@@ -144,6 +184,7 @@ class _MapScreenState extends State<MapScreen>
   LatLng get _center {
     final center = _highlight.center;
     return widget.initialCenter ??
+        _userPosition ??
         LatLng(center.lat.toDouble(), center.lng.toDouble());
   }
 
@@ -152,7 +193,10 @@ class _MapScreenState extends State<MapScreen>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.actions != widget.actions) {
       _detachActions();
-      _detachActions = _actions.attachMap(_applyGeoAction);
+      _detachActions = _actions.attachMap(
+        _applyGeoAction,
+        onFinished: _returnToUser,
+      );
     }
     if (oldWidget.road != widget.road) {
       _highlight.setRoad(widget.road ?? lauzonRoad);
@@ -188,11 +232,26 @@ class _MapScreenState extends State<MapScreen>
   @override
   void initState() {
     super.initState();
-    _detachActions = _actions.attachMap(_applyGeoAction);
+    _detachActions = _actions.attachMap(
+      _applyGeoAction,
+      onFinished: _returnToUser,
+    );
+    if (widget.mapBuilder == null || widget.locateUser != null) {
+      _initialLocation =
+          widget.locateUser?.call() ??
+          _location.locate(requestPermission: true);
+      unawaited(_locateAtStartup());
+    }
     // Continuous source updates prevent MapLibre from reaching its first idle.
     if (widget.onReady != null) _highlight.pause();
     _loadBorders();
     if (widget.mapBuilder == null) _waits.start();
+    _closures.addListener(_closuresChanged);
+    if (widget.mapBuilder == null) _closures.start();
+  }
+
+  void _closuresChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadBorders() async {
@@ -255,6 +314,16 @@ class _MapScreenState extends State<MapScreen>
   Future<void> _positionRoad() async {
     final controller = _mapController;
     if (controller == null || !mounted) return;
+    if (!_initialCameraReady && _initialLocation != null) {
+      try {
+        _userPosition = await _initialLocation!.timeout(
+          const Duration(seconds: 15),
+        );
+      } on TimeoutException {
+        // Start with the default view while permission is still pending.
+      }
+      if (!mounted) return;
+    }
     if (_geoAction != null) {
       await _positionGeoAction(_geoAction!);
       return;
@@ -270,10 +339,12 @@ class _MapScreenState extends State<MapScreen>
       ),
       // Move from the midpoint (50%) to one quarter (25%) of the viewport.
       offset: Offset(0, -_viewportHeight * 0.25),
-      webMaxZoom: widget.initialZoom,
+      webMaxZoom: _userPosition != null ? 15 : widget.initialZoom,
       pitch: widget.initialPitch,
-      webMaxDuration: Duration.zero,
-      nativeDuration: Duration.zero,
+      webMaxDuration: _returningHome ? null : Duration.zero,
+      nativeDuration: _returningHome
+          ? const Duration(milliseconds: 1500)
+          : Duration.zero,
     );
     _scheduleViewportUpdate();
     _initialCameraReady = true;
@@ -299,6 +370,7 @@ class _MapScreenState extends State<MapScreen>
     _viewportGeohashes.dispose();
     _highlight.dispose();
     _waits.dispose();
+    _closures.dispose();
     super.dispose();
   }
 
@@ -333,14 +405,30 @@ class _MapScreenState extends State<MapScreen>
             }
           },
           layers: [
-            if (_geoAction == null ||
-                _geoAction!.highlight == GeoHighlight.path)
+            ..._closures.layersAt(_highlight.pulse),
+            if (_userPosition != null)
+              CircleLayer(
+                points: [
+                  Point(
+                    coordinates: Position(
+                      _userPosition!.longitude,
+                      _userPosition!.latitude,
+                    ),
+                  ),
+                ],
+                radius: 8,
+                color: const Color(0xFF448AFF),
+                strokeWidth: 2,
+                strokeColor: Colors.white,
+              ),
+            if ((_geoAction == null && widget.road != null) ||
+                _geoAction?.highlight == GeoHighlight.path)
               ..._highlight.layers,
-            ..._actionPoints,
             ..._borderConnections,
             ..._borderLayers,
           ],
           children: [
+            if (_actionPoints.isNotEmpty) WidgetLayer(markers: _actionPoints),
             ListenableBuilder(
               listenable: _waits,
               builder: (context, _) =>
@@ -401,6 +489,13 @@ class _MapScreenState extends State<MapScreen>
                         child: ActionCommandForm(actions: _actions),
                       ),
                     ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Text(
+                        _closures.label,
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                    ),
                     const Padding(
                       padding: EdgeInsets.all(20),
                       child: SupportButton(),
@@ -421,7 +516,7 @@ class _MapScreenState extends State<MapScreen>
                 right: 8,
                 child: SafeArea(
                   child: Text(
-                    'Waits: Transit Barometer · Checkpoints: © OpenStreetMap contributors · Crossing inventory: Wikipedia (CC BY-SA) · OpenFreeMap · © OpenMapTiles',
+                    'Closures: © TomTom · Waits: Transit Barometer · Checkpoints: © OpenStreetMap contributors · Crossing inventory: Wikipedia (CC BY-SA) · OpenFreeMap · © OpenMapTiles',
                     style: TextStyle(
                       fontSize: 10,
                       color: Color(0xFFDFE5E7),

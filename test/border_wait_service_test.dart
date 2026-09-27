@@ -87,11 +87,13 @@ void main() {
         destinationCountry: 'CA',
       );
       await service.refresh();
-      expect(service.reading(us).label, '5 min');
-      expect(service.reading(ca).label, '15 min');
+      expect(us.direction, 'US → Canada');
+      expect(ca.direction, 'Canada → US');
+      expect(service.reading(us).label, '15 min');
+      expect(service.reading(ca).label, '5 min');
       fail = true;
       await service.refresh();
-      expect(service.reading(us).label, '5 min');
+      expect(service.reading(us).label, '15 min');
       expect(service.reading(us).stale, isTrue);
     },
   );

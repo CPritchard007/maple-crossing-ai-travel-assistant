@@ -1,9 +1,11 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 import '../services/app_instance_service.dart';
 import '../services/action_service.dart';
+import '../services/tts_service.dart';
 
 class MapOverlay extends StatelessWidget {
   const MapOverlay({
@@ -18,15 +20,8 @@ class MapOverlay extends StatelessWidget {
   final String text;
   final AppInstanceService? instanceService;
 
-  /// Edge feathering at the largest text size. Set to zero for sharp text.
+  /// Text edge feathering. Set to zero for sharp text.
   final double edgeSoftness;
-
-  double _fontSize(String text) {
-    // Short messages stay large; longer text gradually shrinks to body size.
-    final length = text.trim().replaceAll(RegExp(r'\s+'), ' ').runes.length;
-    final progress = ((length - 40) / 200).clamp(0.0, 1.0);
-    return 40 - (32 * progress);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +33,6 @@ class MapOverlay extends StatelessWidget {
   }
 
   Widget _buildOverlay(BuildContext context, String displayText) {
-    final fontSize = _fontSize(displayText);
     return Stack(
       children: [
         IgnorePointer(
@@ -117,33 +111,105 @@ class MapOverlay extends StatelessWidget {
             ),
           ),
         ),
-        Positioned(
-          left: 50,
-          right: 50,
-          bottom: 300,
-          child: IgnorePointer(
-            child: ImageFiltered(
-              // Scale the feathering down for smaller paragraph text.
-              imageFilter: ui.ImageFilter.blur(
-                sigmaX: edgeSoftness * fontSize / 56,
-                sigmaY: edgeSoftness * fontSize / 56,
-              ),
-              enabled: edgeSoftness > 0,
-              child: Text(
-                displayText,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: fontSize,
-                  height: 1.25,
-                  fontWeight: FontWeight.bold,
-                  fontFamily: 'Helvetica',
+        if (displayText.isNotEmpty)
+          Positioned(
+            left: 24,
+            right: 24,
+            bottom: MediaQuery.sizeOf(context).height * 0.15,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 900),
+                child: SizedBox(
+                  height: 140,
+                  child: ImageFiltered(
+                    imageFilter: ui.ImageFilter.blur(
+                      sigmaX: edgeSoftness * 24 / 56,
+                      sigmaY: edgeSoftness * 24 / 56,
+                    ),
+                    enabled: edgeSoftness > 0,
+                    child: NarrationText(
+                      text: displayText,
+                      progress: ttsService.playbackProgress,
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-        ),
       ],
     );
   }
+}
+
+/// Scrolls long narration using audio playback progress, with manual scrolling.
+class NarrationText extends StatefulWidget {
+  const NarrationText({super.key, required this.text, required this.progress});
+
+  final String text;
+  final ValueListenable<double> progress;
+
+  @override
+  State<NarrationText> createState() => _NarrationTextState();
+}
+
+class _NarrationTextState extends State<NarrationText> {
+  final _scroll = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.progress.addListener(_followPlayback);
+  }
+
+  @override
+  void didUpdateWidget(NarrationText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.progress != widget.progress) {
+      oldWidget.progress.removeListener(_followPlayback);
+      widget.progress.addListener(_followPlayback);
+    }
+    if (oldWidget.text != widget.text && _scroll.hasClients) {
+      _scroll.jumpTo(0);
+    }
+  }
+
+  void _followPlayback() {
+    if (!_scroll.hasClients) return;
+    final position = _scroll.position;
+    // Keep the approximate spoken line near the middle of the viewport.
+    final target =
+        ((position.maxScrollExtent + position.viewportDimension) *
+                    widget.progress.value -
+                position.viewportDimension / 2)
+            .clamp(0.0, position.maxScrollExtent);
+    _scroll.animateTo(
+      target,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.linear,
+    );
+  }
+
+  @override
+  void dispose() {
+    widget.progress.removeListener(_followPlayback);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+    controller: _scroll,
+    child: Text(
+      widget.text,
+      textAlign: TextAlign.center,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 24,
+        height: 1.4,
+        fontWeight: FontWeight.bold,
+        fontFamily: 'Helvetica',
+        shadows: [Shadow(color: Colors.black, blurRadius: 6)],
+      ),
+    ),
+  );
 }

@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:maplibre/maplibre.dart';
 import 'package:maple_crossing/screens/map_screen.dart';
 import 'package:maple_crossing/components/overlay.dart';
+import 'package:maple_crossing/data/lauzon_road.dart';
 
 void main() {
   testWidgets('Pitched map pulses the road with a full-screen overlay', (
@@ -12,6 +13,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: MapScreen(
+          road: lauzonRoad,
           mapBuilder: (value) {
             map = value;
             return const SizedBox.expand();
@@ -21,11 +23,11 @@ void main() {
     );
     expect(map.options.initPitch, 55);
     expect(map.options.initCenter!.lat, closeTo(42.325242, 0.01));
-    final initialWidth = (map.layers.first as PolylineLayer).width;
+    final initialOpacity = (map.layers.first as PolylineLayer).opacity;
     await tester.pump(const Duration(milliseconds: 600));
     expect(
-      (map.layers.first as PolylineLayer).width,
-      greaterThan(initialWidth),
+      (map.layers.first as PolylineLayer).opacity,
+      greaterThan(initialOpacity),
     );
     expect(find.byType(AppBar), findsNothing);
     expect(find.byTooltip('Dismiss build notice'), findsOneWidget);
@@ -78,8 +80,12 @@ void main() {
       expect(map.options.initCenter!.lng, closeTo(-82.95, 0.00001));
       await tester.pumpWidget(screen(second));
       expect(map.options.initCenter!.lng, closeTo(-79.35, 0.00001));
-      expect(map.layers.length, 3);
-      expect((map.layers.last as PolylineLayer).width, 13);
+      expect(map.layers.length, 4);
+      expect((map.layers.last as PolylineLayer).width, 3);
+      final glow = map.layers.first as PolylineLayer;
+      expect(glow.getPaint()['line-blur'], 24);
+      expect(glow.getLayout()['line-cap'], 'round');
+      expect(glow.getLayout()['line-join'], 'round');
       await tester.pumpWidget(const SizedBox());
       expect(tester.takeException(), isNull);
     },

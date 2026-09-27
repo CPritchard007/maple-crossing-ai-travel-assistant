@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:maple_crossing/services/action_service.dart';
 
 const sample =
@@ -12,6 +13,75 @@ const sample =
     '((geo lat="42.2854" lng="-82.9512" highlight="destination" type="summary" action="terminate"))';
 
 void main() {
+  test('clears text ten seconds after playback finishes', () {
+    fakeAsync((clock) {
+      final playback = Completer<void>();
+      final service = ActionService(speak: (_) => playback.future);
+      unawaited(service.execute('Final narration'));
+      clock.flushMicrotasks();
+      clock.elapse(const Duration(seconds: 20));
+      expect(service.overlayText.value, 'Final narration');
+      playback.complete();
+      clock.flushMicrotasks();
+      clock.elapse(const Duration(seconds: 9));
+      expect(service.overlayText.value, 'Final narration');
+      clock.elapse(const Duration(seconds: 1));
+      expect(service.overlayText.value, '');
+    });
+  });
+
+  test('previous timeout cannot clear new narration', () {
+    fakeAsync((clock) {
+      final playback = Completer<void>();
+      final service = ActionService(
+        speak: (text) async {
+          if (text == 'New narration') await playback.future;
+        },
+      );
+      final feed = StreamController<String>();
+      service.attachMap((_) async {});
+      unawaited(service.consume(feed.stream));
+      feed.add('First ((geo lat="42" lng="-83"))');
+      clock.flushMicrotasks();
+      clock.elapse(const Duration(seconds: 5));
+      feed.add('New narration ((geo lat="42" lng="-83"))');
+      clock.flushMicrotasks();
+      clock.elapse(const Duration(seconds: 10));
+      expect(service.overlayText.value, 'New narration');
+      playback.complete();
+      clock.flushMicrotasks();
+      clock.elapse(const Duration(seconds: 10));
+      expect(service.overlayText.value, '');
+      unawaited(feed.close());
+      clock.flushMicrotasks();
+    });
+  });
+
+  test('returns home only after the final narration completes', () async {
+    final events = <String>[];
+    final finalSpeech = Completer<void>();
+    final release = Completer<void>();
+    final service = ActionService(
+      speak: (text) async {
+        events.add(text);
+        if (text == 'Last') {
+          finalSpeech.complete();
+          await release.future;
+        }
+      },
+    );
+    service.attachMap(
+      (_) async => events.add('map'),
+      onFinished: () async => events.add('home'),
+    );
+    final run = service.execute('First ((geo lat="42" lng="-83")) Last');
+    await finalSpeech.future;
+    expect(events, ['First', 'map', 'Last']);
+    release.complete();
+    await run;
+    expect(events, ['First', 'map', 'Last', 'home']);
+  });
+
   test(
     'next text waits for action completion and trailing text is spoken',
     () async {

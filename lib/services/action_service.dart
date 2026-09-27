@@ -57,19 +57,29 @@ class ActionService {
   final Future<void> Function(String) _speak;
   final Future<void> Function() _stopSpeaking;
   MapActionHandler? _mapHandler;
+  Future<void> Function()? _onFinished;
+  bool get isRunning => _running;
   bool _running = false;
   int _generation = 0;
   StreamIterator<ActionStep>? _iterator;
   final _overlayText = ValueNotifier<String?>(null);
+  Timer? _overlayClearTimer;
 
-  /// Text for the current step, excluding action brackets. Retained after speech.
+  /// Text for the current step, cleared ten seconds after speech finishes.
   ValueListenable<String?> get overlayText => _overlayText;
 
   /// The map owns this binding and must call the returned function on disposal.
-  void Function() attachMap(MapActionHandler handler) {
+  void Function() attachMap(
+    MapActionHandler handler, {
+    Future<void> Function()? onFinished,
+  }) {
     _mapHandler = handler;
+    _onFinished = onFinished;
     return () {
-      if (identical(_mapHandler, handler)) _mapHandler = null;
+      if (identical(_mapHandler, handler)) {
+        _mapHandler = null;
+        _onFinished = null;
+      }
     };
   }
 
@@ -124,8 +134,19 @@ class ActionService {
       while (await iterator.moveNext()) {
         final step = iterator.current;
         if (generation != _generation) break;
-        if (step.speech.isNotEmpty) _overlayText.value = step.speech;
-        if (step.speech.isNotEmpty) await _speak(step.speech);
+        if (step.speech.isNotEmpty) {
+          _overlayClearTimer?.cancel();
+          _overlayText.value = step.speech;
+          try {
+            await _speak(step.speech);
+          } finally {
+            if (generation == _generation) {
+              _overlayClearTimer = Timer(const Duration(seconds: 10), () {
+                _overlayText.value = '';
+              });
+            }
+          }
+        }
         if (generation != _generation) break;
         final geo = step.geo;
         if (geo != null) {
@@ -138,6 +159,7 @@ class ActionService {
         if (generation != _generation) break;
         if (geo?.intent == GeoIntent.terminate) break;
       }
+      if (generation == _generation) await _onFinished?.call();
     } finally {
       await iterator.cancel();
       _iterator = null;
@@ -147,6 +169,8 @@ class ActionService {
 
   Future<void> cancel() async {
     ++_generation;
+    _overlayClearTimer?.cancel();
+    _overlayText.value = '';
     await Future.wait([
       _stopSpeaking(),
       if (_iterator != null) _iterator!.cancel(),

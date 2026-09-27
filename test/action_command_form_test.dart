@@ -29,11 +29,15 @@ void main() {
       await tester.pumpAndSettle();
       expect(actions.submitted, ActionCommandForm.testCase);
       final steps = actions.parse(actions.submitted!);
-      expect(steps, hasLength(3));
-      expect(steps[0].geo!.highlight, GeoHighlight.none);
+      expect(steps, hasLength(5));
+      expect(steps[0].geo!.highlight, GeoHighlight.path);
+      expect(steps[0].geo!.status, GeoStatus.hazard);
       expect(steps[1].geo!.highlight, GeoHighlight.path);
-      expect(steps[2].geo, isNull);
-      expect(steps.every((step) => step.speech.isNotEmpty), isTrue);
+      expect(steps[2].geo!.highlight, GeoHighlight.destination);
+      expect(steps[3].geo!.highlight, GeoHighlight.destination);
+      expect(steps[4].geo, isNull);
+      expect(steps.first.speech, isEmpty);
+      expect(steps.skip(1).every((step) => step.speech.isNotEmpty), isTrue);
       expect(find.text('Actions completed.'), findsOneWidget);
     },
   );

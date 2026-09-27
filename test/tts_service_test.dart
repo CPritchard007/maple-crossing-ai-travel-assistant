@@ -27,6 +27,12 @@ class FakeAudio implements SpeechAudio {
   }
 }
 
+class ProgressAudio extends FakeAudio implements SpeechProgressAudio {
+  final updates = StreamController<double>.broadcast(sync: true);
+  @override
+  Stream<double> get progress => updates.stream;
+}
+
 http.Response mp3() => http.Response.bytes(
   [1, 2, 3],
   200,
@@ -34,6 +40,21 @@ http.Response mp3() => http.Response.bytes(
 );
 
 void main() {
+  test('publishes playback progress through completion', () async {
+    final audio = ProgressAudio();
+    final service = TtsService(
+      clientFactory: () => MockClient((_) async => mp3()),
+      audioFactory: () => audio,
+    );
+    final speech = service.speakAndWait('Narration');
+    await audio.played.future;
+    audio.updates.add(0.5);
+    expect(service.playbackProgress.value, 0.5);
+    audio.completed.complete();
+    await speech;
+    expect(service.playbackProgress.value, 1);
+    await audio.updates.close();
+  });
   test('posts text and language; waits for audio completion', () async {
     final audio = FakeAudio();
     final service = TtsService(

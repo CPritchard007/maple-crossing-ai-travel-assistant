@@ -14,7 +14,20 @@ abstract class SpeechAudio {
   Future<void> dispose();
 }
 
-class _PollyAudio implements SpeechAudio {
+abstract class SpeechProgressAudio {
+  Stream<double> get progress;
+}
+
+class _PollyAudio implements SpeechAudio, SpeechProgressAudio {
+  Duration _duration = Duration.zero;
+  StreamSubscription<Duration>? _durationSubscription;
+
+  @override
+  Stream<double> get progress => _player.onPositionChanged.map(
+    (position) => _duration.inMilliseconds > 0
+        ? (position.inMilliseconds / _duration.inMilliseconds).clamp(0.0, 1.0)
+        : 0.0,
+  );
   final _player = AudioPlayer();
   final _done = Completer<void>();
   StreamSubscription<void>? _completion;
@@ -30,6 +43,9 @@ class _PollyAudio implements SpeechAudio {
       _starting = _start(bytes, rate, volume);
 
   Future<void> _start(Uint8List bytes, double rate, double volume) async {
+    _durationSubscription = _player.onDurationChanged.listen((value) {
+      _duration = value;
+    });
     _completion = _player.onPlayerComplete.listen(
       (_) {
         if (!_done.isCompleted) _done.complete();
@@ -54,6 +70,7 @@ class _PollyAudio implements SpeechAudio {
     try {
       await _starting;
     } catch (_) {}
+    await _durationSubscription?.cancel();
     await _completion?.cancel();
     await _player.dispose();
     if (!_done.isCompleted) _done.complete();
@@ -73,6 +90,8 @@ class TtsService {
   final http.Client Function() _clientFactory;
   final SpeechAudio Function() _audioFactory;
   _SpeechRequest? _active;
+  final _playbackProgress = ValueNotifier<double>(0);
+  ValueListenable<double> get playbackProgress => _playbackProgress;
 
   bool get isSupported =>
       kIsWeb || defaultTargetPlatform != TargetPlatform.fuchsia;
@@ -120,6 +139,7 @@ class TtsService {
     final previous = _active;
     final request = _SpeechRequest(_clientFactory());
     _active = request;
+    _playbackProgress.value = 0;
     final operation = _run(
       request,
       previous,
@@ -188,6 +208,15 @@ class TtsService {
           );
         }
         final audio = request.audio = _audioFactory();
+        if (audio is SpeechProgressAudio) {
+          request.progressSubscription = (audio as SpeechProgressAudio).progress
+              .listen((fraction) {
+                if (identical(_active, request) && !request.cancelled) {
+                  _playbackProgress.value =
+                      (offset + (end - offset) * fraction) / characters.length;
+                }
+              });
+        }
         // Install the error listener before playback starts.
         final finished = audio.done;
         unawaited(finished.catchError((Object _) {}));
@@ -195,6 +224,11 @@ class TtsService {
         if (!request.started.isCompleted) request.started.complete();
         if (request.cancelled) return;
         await finished;
+        await request.progressSubscription?.cancel();
+        request.progressSubscription = null;
+        if (identical(_active, request) && !request.cancelled) {
+          _playbackProgress.value = end / characters.length;
+        }
         await audio.dispose();
         request.audio = null;
       }
@@ -225,6 +259,7 @@ class _SpeechRequest {
   final started = Completer<void>();
   final stopped = Completer<void>();
   SpeechAudio? audio;
+  StreamSubscription<double>? progressSubscription;
   bool cancelled = false;
   Future<void>? _cancellation;
 
@@ -233,6 +268,7 @@ class _SpeechRequest {
     cancelled = true;
     stopped.complete();
     client.close();
+    await progressSubscription?.cancel();
     await audio?.dispose();
   }
 }

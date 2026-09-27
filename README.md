@@ -39,17 +39,17 @@ The current local dataset supplies paired endpoints for Ambassador Bridge and Wi
 
 At zoom 10 and above, upright flag-style cards show the crossing name, travel direction, passenger-car wait, and provider update text. The connector meets the card's left edge. Cards and text grow together as you zoom in; overlapping or out-of-view cards are hidden to avoid clutter. The cards do not intercept map gestures.
 
-A direction is shown only when its destination country is known. Otherwise, the card uses `US ↔ Canada` and does not select a directional wait.
+Popups describe travel departing from the marker’s side: US-side markers show US → Canada and Canadian-side markers show Canada → US, with wait times selected for that destination. A direction is shown only when the inspection-site country is known. Otherwise, the card uses `US ↔ Canada` and does not select a directional wait.
 
 ### Road highlight and overlay
 
 ![Pulsing road highlight on the dark map](./docs/images/road-highlight.png)
 
-The red road highlight uses three animated line layers. The default geometry is a bundled Lauzon Road segment; the service can render other supplied road geometries with the same theme. The camera places the target around one quarter of the viewport height, leaving room for the darker lower overlay.
+The red road highlight uses four neon-tube layers: a diffuse outer glow, a colored halo, a saturated tube, and a near-white core. Rounded ends and joins follow the road smoothly; the pulse changes brightness without changing line width. The default geometry is a bundled Lauzon Road segment; the service can render other supplied road geometries with the same theme. The camera places the target around one quarter of the viewport height, leaving room for the darker lower overlay.
 
 ![Gradient and softened overlay message](./docs/images/map-overlay.png)
 
-`MapOverlay` provides the fixed gradient and optional centered, softened text. Its text, size calculation, position, and feathering are editable in [overlay.dart](lib/components/overlay.dart). The placeholder message is presentation content, not a live map-loading status.
+`MapOverlay` provides the fixed gradient and optional centered, softened text. Narration uses a fixed 24-point size and scrolls approximately with audio playback progress; it also supports manual scrolling. Text clears ten seconds after speech finishes. Its text, position, and feathering are editable in [overlay.dart](lib/components/overlay.dart). The placeholder message is presentation content, not a live map-loading status.
 
 ### Branded startup
 
@@ -64,14 +64,14 @@ Use a Flutter SDK compatible with the Dart constraint in [pubspec.yaml](pubspec.
 ```sh
 flutter doctor
 flutter pub get
-flutter run -d chrome
+flutter run
 ```
 
 If using FVM, run the same commands with `fvm flutter` and configure your editor to use that SDK.
 
 ### VS Code / Cursor
 
-Install the recommended Dart and Flutter extensions, then open **Run and Debug** and select **Flutter Web (Chrome)**. Press **F5** to launch a debugger-managed instance.
+Install the recommended Dart and Flutter extensions, open `lib/main.dart`, and use **Flutter: Select Device** (or the device selector in the status bar) to choose Chrome, an iOS simulator, an Android emulator, or a connected device. Press **F5** to launch using Flutter's standard debug support. No custom launch configuration is required.
 
 | Action | How |
 | --- | --- |
@@ -153,7 +153,7 @@ web/                                HTML launch screen and MapLibre setup
 scripts/                            Data importers and importer tests
 test/                               Flutter unit and widget tests
 docs/images/                        README screenshots and image notes
-.vscode/                            Shared editor and launch configuration
+.vscode/                            Shared editor settings and extension recommendations
 ```
 
 ### Runtime flow
@@ -280,7 +280,7 @@ This output must be served under `/maple-crossing-ai-travel-assistant/`. For a p
 | Old appearance after editing | Use Flutter hot reload for Dart; rebuild a static preview and hard-refresh its browser tab. |
 | Launch screen stays visible | Check CDN/style requests, network access, browser console, and first-idle readiness. |
 | Formatter or debugger missing | Install Dart/Flutter extensions and correct the workspace SDK path. |
-| Overlay message is absent or oversized | Inspect the current `_fontSize` calculation and text in `MapOverlay`; keep returned font sizes and blur values nonnegative. |
+| Overlay message is absent or oversized | Inspect the narration text and scroll area in `MapOverlay`. |
 
 ## Attribution and limitations
 
@@ -365,9 +365,9 @@ Highlight tags infer a point from `lat`/`lng` or a path from `path`. Omitted `ty
 
 | Tag attribute | Meaning |
 | --- | --- |
-| `highlight="point"` | Point marker; requires `lat` and `lng`. |
+| `highlight="point"` | Arrow pointing at the location; requires `lat` and `lng`. |
 | `highlight="path"` | Pulsing road geometry; requires 2–1000 `lat,lng` pairs separated by semicolons in `path`. |
-| `highlight="destination"` | Larger destination marker; requires `lat` and `lng`. |
+| `highlight="destination"` | Larger destination arrow; requires `lat` and `lng`. |
 | `type="recommendation"` | Green highlight. |
 | `type="hazard"` | Red highlight. |
 | `type="summary"` | Blue highlight. |
@@ -376,6 +376,15 @@ Highlight tags infer a point from `lat`/`lng` or a path from `path`. Omitted `ty
 | `action="terminate"` | Show and narrate the final step, then end this notice. Does not close the app or its tracked instance. |
 | `name` | Optional road/place metadata retained in the parsed action. |
 
-The camera frames the supplied geometry; coordinates are converted from incoming latitude/longitude to MapLibre longitude/latitude. Each step replaces the previous feed highlight, and the final highlight stays visible. The service does not infer road geometry from a name.
+The camera frames the supplied geometry; coordinates are converted from incoming latitude/longitude to MapLibre longitude/latitude. Each step replaces the previous feed highlight, and after the complete narration/action feed finishes the camera returns to the user’s location and clears the action highlight. If location is unavailable, the final highlight stays visible. The service does not infer road geometry from a name.
 
 Both quote styles are supported. Unknown/duplicate attributes, unsupported values, nested/unclosed tags, nonfinite/out-of-range coordinates, and ambiguous geometry throw `FormatException`. Maximum feed length is 1 MiB of Dart string code units; tags are capped at 32 KiB. Complete responses are validated before any effects. Streaming feeds validate completed steps as they arrive, so an error later in a stream does not undo earlier steps. One feed runs at a time; failures propagate to the caller. Cancel stops narration and prevents later steps. Audio playback completion is used via `ttsService.speakAndWait`.
+
+### User location
+
+On startup, the app requests foreground location permission and centers on the user with a blue location marker. Denied permission or unavailable positioning falls back to the default Windsor view. After the entire narration/action feed completes, it refreshes the location and animates back (using the last known position if refresh fails). Pauses between speech segments do not trigger a return. Location is not sent to the backend. Browser geolocation requires HTTPS or localhost. Native permission/plugin changes require a full rebuild.
+## Live road closures
+
+Current Windsor/Detroit road closures load automatically from the backend's `/api/road-closures` endpoint and appear as red neon hazard highlights. They persist independently of narration actions. The feed refreshes every minute; reopened roads disappear on refresh. Point-only reports use red markers. The menu shows availability and the reported count; unavailable data is not an assurance that roads are open.
+
+Enable the backend with `TOMTOM_API_KEY` (TomTom Orbis Traffic API). See the backend's `ROAD_CLOSURES.md` for setup and coverage limitations. The bundled Lauzon demo road is only highlighted when explicitly supplied or requested through an action.
