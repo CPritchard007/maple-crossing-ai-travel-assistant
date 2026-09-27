@@ -18,7 +18,7 @@ class MapOverlay extends StatelessWidget {
     // Short messages stay large; longer text gradually shrinks to body size.
     final length = text.trim().replaceAll(RegExp(r'\s+'), ' ').runes.length;
     final progress = ((length - 40) / 200).clamp(0.0, 1.0);
-    return 32 - (32 * progress);
+    return 40 - (32 * progress);
   }
 
   @override

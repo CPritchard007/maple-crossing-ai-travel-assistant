@@ -15,7 +15,7 @@ class BorderPopups extends StatelessWidget {
   Widget build(BuildContext context) {
     // Subscribe to camera changes so cards follow pan, zoom, rotation and pitch.
     final camera = MapCamera.of(context);
-    if (camera.zoom < 15) return const SizedBox.shrink();
+    if (camera.zoom < 10) return const SizedBox.shrink();
     // Smooth zoom weight: original size at overview zoom, up to 1.8× close up.
     final zoomWeight = ((camera.zoom - 11.5) / (19 - 11.5)).clamp(0.0, 1.0);
     final zoomScale = 1 + 0.8 * Curves.easeInOut.transform(zoomWeight);
