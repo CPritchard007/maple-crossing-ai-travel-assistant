@@ -43,7 +43,7 @@ void main() {
       tester
           .widget<IgnorePointer>(
             find
-                .ancestor(
+                .descendant(
                   of: find.byType(MapOverlay),
                   matching: find.byType(IgnorePointer),
                 )
@@ -79,7 +79,7 @@ void main() {
       await tester.pumpWidget(screen(second));
       expect(map.options.initCenter!.lng, closeTo(-79.35, 0.00001));
       expect(map.layers.length, 3);
-      expect((map.layers.last as PolylineLayer).width, 5);
+      expect((map.layers.last as PolylineLayer).width, 13);
       await tester.pumpWidget(const SizedBox());
       expect(tester.takeException(), isNull);
     },

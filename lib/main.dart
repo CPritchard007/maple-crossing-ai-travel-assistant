@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 
+import 'services/app_instance_service.dart';
+
 import 'screens/map_screen.dart';
 import 'platform/launch_screen.dart';
 
-void main() => runApp(const MyApp());
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  appInstance.startTracking();
+  runApp(const MyApp());
+}
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});

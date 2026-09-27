@@ -5,10 +5,13 @@ import 'package:maplibre/maplibre.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../components/overlay.dart';
+import '../components/action_command_form.dart';
+import '../components/support_button.dart';
 import '../components/build_notice.dart';
 import '../components/border_popups.dart';
 import '../data/lauzon_road.dart';
 import '../services/road_highlight_service.dart';
+import '../services/action_service.dart';
 import '../services/border_crossing_service.dart';
 import '../services/border_wait_service.dart';
 import '../services/viewport_geohash_service.dart';
@@ -24,10 +27,12 @@ class MapScreen extends StatefulWidget {
     this.initialZoom = 11.5,
     this.initialPitch = 55,
     this.mapBuilder,
+    this.actions,
   });
 
   /// Road to highlight. Defaults to the bundled Lauzon Road segment.
   final LineString? road;
+  final ActionService? actions;
   final VoidCallback? onReady;
 
   /// Use this to query data for the current screen's geohash cells.
@@ -54,6 +59,88 @@ class _MapScreenState extends State<MapScreen>
     road: widget.road ?? lauzonRoad,
   );
 
+  late void Function() _detachActions;
+  final _styleReady = Completer<void>();
+  GeoAction? _geoAction;
+  ActionService get _actions => widget.actions ?? actionService;
+
+  Color _statusColor(GeoStatus status) => switch (status) {
+    GeoStatus.recommendation => const Color(0xFF82D5B0),
+    GeoStatus.hazard => Colors.red,
+    GeoStatus.summary => const Color(0xFF64B5F6),
+  };
+
+  Future<void> _applyGeoAction(GeoAction action) async {
+    if (widget.mapBuilder == null) await _styleReady.future;
+    if (!mounted) throw StateError('Map was disposed.');
+    setState(() => _geoAction = action);
+    if (action.highlight == GeoHighlight.path) {
+      _highlight.setColor(_statusColor(action.status));
+      _highlight.setRoad(
+        LineString(
+          coordinates: [
+            for (final p in action.coordinates)
+              Position(p.longitude, p.latitude),
+          ],
+        ),
+      );
+    }
+    await _positionGeoAction(action);
+  }
+
+  Completer<void>? _actionCameraIdle;
+
+  Future<void> _positionGeoAction(GeoAction action) async {
+    final controller = _mapController;
+    if (controller == null || !mounted) return;
+    final lats = action.coordinates.map((p) => p.latitude);
+    final lngs = action.coordinates.map((p) => p.longitude);
+    double minimum(double a, double b) => a < b ? a : b;
+    double maximum(double a, double b) => a > b ? a : b;
+    final idle = widget.mapBuilder == null ? Completer<void>() : null;
+    _actionCameraIdle?.complete();
+    _actionCameraIdle = idle;
+    try {
+      await controller.fitBounds(
+        bounds: LngLatBounds(
+          longitudeWest: (lngs.reduce(minimum) - 0.0001).clamp(-180, 180),
+          longitudeEast: (lngs.reduce(maximum) + 0.0001).clamp(-180, 180),
+          latitudeSouth: (lats.reduce(minimum) - 0.0001).clamp(-90, 90),
+          latitudeNorth: (lats.reduce(maximum) + 0.0001).clamp(-90, 90),
+        ),
+        offset: Offset(0, -_viewportHeight * 0.20),
+        webMaxZoom: action.highlight == GeoHighlight.none ? 15 : 17,
+        pitch: widget.initialPitch,
+        // A web maxDuration makes longer flights instant rather than capping them.
+        webSpeed: 0.8,
+        nativeDuration: const Duration(milliseconds: 1500),
+      );
+      if (idle != null) {
+        await idle.future.timeout(const Duration(seconds: 30));
+      }
+    } finally {
+      if (identical(_actionCameraIdle, idle)) _actionCameraIdle = null;
+    }
+    if (mounted) _scheduleViewportUpdate();
+  }
+
+  List<CircleLayer> get _actionPoints {
+    final action = _geoAction;
+    if (action == null ||
+        action.highlight == GeoHighlight.none ||
+        action.highlight == GeoHighlight.path) {
+      return [];
+    }
+    final p = action.coordinates.single;
+    return [
+      CircleLayer(
+        points: [Point(coordinates: Position(p.longitude, p.latitude))],
+        color: _statusColor(action.status),
+        radius: action.highlight == GeoHighlight.destination ? 30 : 20,
+      ),
+    ];
+  }
+
   LatLng get _center {
     final center = _highlight.center;
     return widget.initialCenter ??
@@ -63,6 +150,10 @@ class _MapScreenState extends State<MapScreen>
   @override
   void didUpdateWidget(covariant MapScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.actions != widget.actions) {
+      _detachActions();
+      _detachActions = _actions.attachMap(_applyGeoAction);
+    }
     if (oldWidget.road != widget.road) {
       _highlight.setRoad(widget.road ?? lauzonRoad);
     }
@@ -97,6 +188,7 @@ class _MapScreenState extends State<MapScreen>
   @override
   void initState() {
     super.initState();
+    _detachActions = _actions.attachMap(_applyGeoAction);
     // Continuous source updates prevent MapLibre from reaching its first idle.
     if (widget.onReady != null) _highlight.pause();
     _loadBorders();
@@ -163,6 +255,10 @@ class _MapScreenState extends State<MapScreen>
   Future<void> _positionRoad() async {
     final controller = _mapController;
     if (controller == null || !mounted) return;
+    if (_geoAction != null) {
+      await _positionGeoAction(_geoAction!);
+      return;
+    }
     if (!_readySent) _mapIdle = false;
     final center = _center;
     await controller.fitBounds(
@@ -182,6 +278,7 @@ class _MapScreenState extends State<MapScreen>
     _scheduleViewportUpdate();
     _initialCameraReady = true;
     _notifyReady();
+    if (!_styleReady.isCompleted) _styleReady.complete();
   }
 
   @override
@@ -194,6 +291,10 @@ class _MapScreenState extends State<MapScreen>
 
   @override
   void dispose() {
+    _detachActions();
+    _actionCameraIdle?.complete();
+    _actionCameraIdle = null;
+    if (!_styleReady.isCompleted) _styleReady.complete();
     _viewportTimer?.cancel();
     _viewportGeohashes.dispose();
     _highlight.dispose();
@@ -219,6 +320,10 @@ class _MapScreenState extends State<MapScreen>
           onMapCreated: (controller) => _mapController = controller,
           onStyleLoaded: (_) => _positionRoad(),
           onEvent: (event) {
+            if (event is MapEventCameraIdle) {
+              _actionCameraIdle?.complete();
+              _actionCameraIdle = null;
+            }
             if (event is MapEventIdle) {
               _mapIdle = true;
               _notifyReady();
@@ -228,7 +333,10 @@ class _MapScreenState extends State<MapScreen>
             }
           },
           layers: [
-            ..._highlight.layers,
+            if (_geoAction == null ||
+                _geoAction!.highlight == GeoHighlight.path)
+              ..._highlight.layers,
+            ..._actionPoints,
             ..._borderConnections,
             ..._borderLayers,
           ],
@@ -241,11 +349,72 @@ class _MapScreenState extends State<MapScreen>
           ],
         );
         return Scaffold(
+          drawer: Drawer(
+            backgroundColor: const Color(0xFF182024),
+            child: SafeArea(
+              child: Builder(
+                builder: (context) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            tooltip: 'Close menu',
+                            icon: const Icon(
+                              Icons.menu,
+                              color: Colors.white,
+                              size: 28,
+                            ),
+                            onPressed: () => Scaffold.of(context).closeDrawer(),
+                          ),
+                          const SizedBox(width: 16),
+                          const Expanded(
+                            child: Text(
+                              'Maple Crossing',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(color: Colors.white24),
+                    ListTile(
+                      leading: const Icon(
+                        Icons.map_outlined,
+                        color: Colors.white,
+                      ),
+                      title: const Text(
+                        'Map',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      selected: true,
+                      onTap: () => Scaffold.of(context).closeDrawer(),
+                    ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(20),
+                        child: ActionCommandForm(actions: _actions),
+                      ),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.all(20),
+                      child: SupportButton(),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
           body: Stack(
             fit: StackFit.expand,
             children: [
               widget.mapBuilder?.call(map) ?? map,
-              const Positioned.fill(child: IgnorePointer(child: MapOverlay())),
+              Positioned.fill(child: MapOverlay(actions: _actions)),
               const BuildNotice(),
               const Positioned(
                 bottom: 4,

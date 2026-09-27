@@ -18,6 +18,12 @@ class RoadHighlightService extends ChangeNotifier {
 
   late final AnimationController _pulse;
   late LineString _road;
+  Color _color = Colors.red;
+
+  void setColor(Color color) {
+    _color = color;
+    notifyListeners();
+  }
 
   void pause() => _pulse.stop();
   void resume() => _pulse.repeat(reverse: true);
@@ -56,22 +62,22 @@ class RoadHighlightService extends ChangeNotifier {
     return [
       PolylineLayer(
         polylines: [_road],
-        color: Colors.red.withValues(alpha: 0.10 + pulse * 0.18),
-        width: (18 + pulse * 12).round(),
+        color: _color.withValues(alpha: 0.10 + pulse * 0.18),
+        width: (45 + pulse * 30).round(),
       ),
       PolylineLayer(
         polylines: [_road],
-        color: Colors.red.withValues(alpha: 0.25 + pulse * 0.30),
-        width: (10 + pulse * 5).round(),
+        color: _color.withValues(alpha: 0.25 + pulse * 0.30),
+        width: (25 + pulse * 12).round(),
       ),
       PolylineLayer(
         polylines: [_road],
         color: Color.lerp(
-          const Color(0xFFFF2020),
-          const Color(0xFFFF8585),
+          _color,
+          Color.lerp(_color, Colors.white, 0.45)!,
           pulse,
         )!,
-        width: 5,
+        width: 13,
       ),
     ];
   }

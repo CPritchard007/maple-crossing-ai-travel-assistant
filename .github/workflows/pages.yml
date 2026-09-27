@@ -35,11 +35,12 @@ jobs:
       - run: flutter test
       - name: Build web app
         env:
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
           REPOSITORY_NAME: ${{ github.event.repository.name }}
         run: |
           base_href="/$REPOSITORY_NAME/"
           if [[ "$REPOSITORY_NAME" == *.github.io ]]; then base_href="/"; fi
-          flutter build web --release --no-wasm-dry-run --base-href "$base_href"
+          flutter build web --release --no-wasm-dry-run --base-href "$base_href" --dart-define="BACKEND_URL=$BACKEND_URL"
       - name: Push compiled site to gh-pages
         env:
           SOURCE_SHA: ${{ github.sha }}

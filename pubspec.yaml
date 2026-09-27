@@ -38,7 +38,7 @@ dependencies:
   url_launcher: ^6.3.2
   maplibre: ^0.2.2
   http: ^1.6.0
-
+  audioplayers: ^6.8.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

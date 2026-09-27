@@ -292,3 +292,90 @@ This output must be served under `/maple-crossing-ai-travel-assistant/`. For a p
 Map screenshots in this README retain these credits through their captions and this attribution section. See [image notes](./docs/images/README.md) for capture details.
 
 The wider inventory includes historical/restricted entries and is not a verified exhaustive list. Ferry coverage is absent. Marker presence does not establish current operating status or permission to cross. The dashed references are not navigable routes. There is no live GTFS layer or custom 3D building renderer in the current app. The optional, unused geographic source download under `assets/planet/` is ignored by Git and not bundled.
+
+## Anonymous app initialization
+
+At startup the app sends `POST /api/initialize` in the background with a random UUID v4 `instanceId` and `platform`. The ID belongs to this running app: reloads, new tabs, and restarts get a new ID. It does not identify a person or installation and is not an authentication credential. Future backend calls can use `appInstance.instanceId` for correlation; `appInstance.registered` indicates successful registration.
+
+Each registration attempt retries temporary failures up to three times with the same ID and a ten-second request timeout. Map startup never waits for registration. The top-left status changes from “Initializing” to “Connected” after HTTP 200, or “Connection unavailable” after failure; the spinner stops in either case. After registration, the app sends a heartbeat every 30 seconds using the same ID. The status reflects registration and heartbeat failures, and tracking retries automatically after an outage.
+
+Start the sibling backend with `docker compose up --build -d --wait`, then run:
+
+```sh
+flutter run -d chrome --dart-define=BACKEND_URL=http://localhost:3000
+```
+
+Debug builds default to localhost:3000; release web builds default to the page origin. Set `BACKEND_URL` to the backend origin for separate hosting (HTTPS for an HTTPS frontend). Android emulators normally use `http://10.0.2.2:3000`; physical devices need a reachable server address. The backend's Compose port binding is localhost-only by default. For GitHub Pages, set the repository Actions variable `BACKEND_URL` to your public HTTPS backend before building; Pages cannot serve this API.
+
+### Instance lifecycle
+
+The backend exposes `GET /api/instances/<instanceId>` with `status` (`active`, `expired`, or `closed`), `initializedAt`, `lastSeenAt`, `expiresAt`, and `closedAt`. Heartbeats use `POST /api/instances/<instanceId>?action=heartbeat`; close uses `POST /api/instances/<instanceId>?action=close`. Successful calls return HTTP 200.
+
+Web page exit sends a best-effort close beacon; native detach also attempts closure. Switching tabs or backgrounding does not explicitly close the instance. Browser back-forward cache navigation preserves the instance. If the process is killed, network drops, or background timers are suspended, the instance becomes expired after two minutes without a heartbeat. Expiry is calculated when status is read; a resumed heartbeat makes an expired instance active again. Closed instances cannot be reopened. Reloading starts a new instance.
+
+Use a full browser reload after changes to `web/instance-lifecycle.js`; hot reload does not reload that script.
+
+## Text to speech
+
+Speech is synthesized by Amazon Polly through the sibling backend's `POST /api/speech` endpoint and played with `audioplayers`. Configure AWS credentials on the backend only (see its README). The app uses the same `BACKEND_URL` as instance tracking.
+
+```dart
+await ttsService.speak('Welcome to Maple Crossing.');
+await ttsService.speak('Bonjour', language: 'fr-CA');
+await ttsService.speakAndWait('Wait for this instruction to finish.');
+await ttsService.stop();
+```
+
+English (`en-CA` or `en-US`) uses Polly Neural Joanna (US English); Canadian French (`fr-CA`) uses Neural Gabrielle. Rate defaults to 0.5 (normal playback speed), volume to 1.0. Pitch must remain 1.0 because Neural does not support pitch adjustment. New speech replaces previous playback; stop cancels pending audio. Long text is split into sequential requests of at most 2,800 Unicode characters. `speak` returns after the first chunk starts; `speakAndWait` waits for all chunks and propagates playback errors. Callers should handle network/synthesis errors.
+
+Speech requires network access and backend AWS configuration. Web playback must be initiated by user interaction and remains subject to browser autoplay policy. Fully restart Flutter after changing the plugin.
+
+## Backend action feeds
+
+`lib/services/action_service.dart` exposes the shared `actionService`. The map attaches automatically; call it with a backend response when the map is mounted and speech has been enabled by a user gesture:
+
+```dart
+import 'package:maple_crossing/services/action_service.dart';
+
+await actionService.execute(backendText); // Complete response; validates first.
+// Or supply decoded text chunks, not raw SSE/JSON framing:
+await actionService.consume(backendTextChunks); // Stream<String>
+await actionService.cancel();
+
+final steps = actionService.parse(backendText); // Inspect without side effects.
+```
+
+Text immediately preceding a `((geo ...))` or `((highlight ...))` tag belongs to that action. Each step shows and speaks that text, waits for speech completion, then applies the map action and waits for the camera animation before advancing. The menu’s “Test narration, geo & highlight” button runs a complete example, including trailing narration. Tags are never spoken. Untagged trailing text is spoken at end of input. The service consumes text; it does not connect to or configure an AI provider. `MapScreen(actions: customService)` supports a separately owned feed.
+
+Coordinate-only commands are valid and move the camera without drawing a highlight:
+
+```text
+((geo lat="42.3149" lng="-83.0364"))
+```
+
+To draw a highlight, put `highlight` first inside the brackets:
+
+```text
+((highlight lat="42.3149" lng="-83.0364"))
+((highlight path="42.3012,-82.9981;42.3080,-82.9900" type="hazard"))
+((highlight lat="42.2854" lng="-82.9512" highlight="destination" type="summary"))
+```
+
+Highlight tags infer a point from `lat`/`lng` or a path from `path`. Omitted `type` defaults to `recommendation`; omitted `action` defaults to `waypoint`. Existing `((geo ... highlight="..."))` commands remain supported.
+
+| Tag attribute | Meaning |
+| --- | --- |
+| `highlight="point"` | Point marker; requires `lat` and `lng`. |
+| `highlight="path"` | Pulsing road geometry; requires 2–1000 `lat,lng` pairs separated by semicolons in `path`. |
+| `highlight="destination"` | Larger destination marker; requires `lat` and `lng`. |
+| `type="recommendation"` | Green highlight. |
+| `type="hazard"` | Red highlight. |
+| `type="summary"` | Blue highlight. |
+| `action="waypoint"` | Focus the supplied point/path. |
+| `action="reroute"` | Focus/highlight supplied geometry; does not calculate a route. |
+| `action="terminate"` | Show and narrate the final step, then end this notice. Does not close the app or its tracked instance. |
+| `name` | Optional road/place metadata retained in the parsed action. |
+
+The camera frames the supplied geometry; coordinates are converted from incoming latitude/longitude to MapLibre longitude/latitude. Each step replaces the previous feed highlight, and the final highlight stays visible. The service does not infer road geometry from a name.
+
+Both quote styles are supported. Unknown/duplicate attributes, unsupported values, nested/unclosed tags, nonfinite/out-of-range coordinates, and ambiguous geometry throw `FormatException`. Maximum feed length is 1 MiB of Dart string code units; tags are capped at 32 KiB. Complete responses are validated before any effects. Streaming feeds validate completed steps as they arrive, so an error later in a stream does not undo earlier steps. One feed runs at a time; failures propagate to the caller. Cancel stops narration and prevents later steps. Audio playback completion is used via `ttsService.speakAndWait`.
