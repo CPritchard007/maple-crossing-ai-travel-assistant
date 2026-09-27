@@ -3,6 +3,9 @@
 *.log
 *.pyc
 *.swp
+*.swo
+*~
+Thumbs.db
 .DS_Store
 .atom/
 .build/
@@ -28,6 +31,7 @@ migrate_working_dir/
 **/ios/Flutter/.last_build_id
 .dart_tool/
 .flutter-plugins-dependencies
+.flutter-plugins
 .pub-cache/
 .pub/
 /build/
@@ -49,6 +53,7 @@ app.*.map.json
 .env.*
 !.env.example
 !.env.sample
+!.env.template
 *.jks
 *.keystore
 *.p12
@@ -69,3 +74,12 @@ venv/
 *.code-workspace
 .codex/
 .agents/
+
+# Local web tooling and hosting caches
+node_modules/
+.vercel/
+.firebase/
+
+# Test runner output
+/test-results/
+/playwright-report/
