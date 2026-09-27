@@ -34,7 +34,12 @@ jobs:
       - run: flutter analyze
       - run: flutter test
       - name: Build web app
-        run: flutter build web --release --no-wasm-dry-run --base-href /maple_crossing/
+        env:
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
+        run: |
+          base_href="/$REPOSITORY_NAME/"
+          if [[ "$REPOSITORY_NAME" == *.github.io ]]; then base_href="/"; fi
+          flutter build web --release --no-wasm-dry-run --base-href "$base_href"
       - name: Push compiled site to gh-pages
         env:
           SOURCE_SHA: ${{ github.sha }}

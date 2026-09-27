@@ -249,7 +249,7 @@ Android, iOS, and Linux scaffolding is present, but the current experience has b
 
 ### GitHub Pages
 
-The workflow in [pages.yml](.github/workflows/pages.yml) builds with Flutter 3.44.4, runs analysis and tests, and pushes only the compiled `build/web` files plus `.nojekyll` to `gh-pages`. It creates the branch on its first run, preserves subsequent deployment history, and skips commits when output is unchanged. It runs on pushes to `main` or manually from Actions on `main`.
+The workflow in [pages.yml](.github/workflows/pages.yml) builds with Flutter 3.44.4, runs analysis and tests, and pushes only the compiled `build/web` files plus `.nojekyll` to `gh-pages`. It creates the branch on its first run, preserves subsequent deployment history, and skips commits when output is unchanged. It runs on pushes to `main` or manually from Actions on `main`. The build base path is derived from the GitHub repository name, so repository renames do not leave Flutter requesting assets from the old path.
 
 1. Commit and push the workflow and app files to GitHub.
 2. Run **Build web and push to gh-pages** from Actions, or push to `main`.
@@ -257,17 +257,17 @@ The workflow in [pages.yml](.github/workflows/pages.yml) builds with Flutter 3.4
 
 The default `GITHUB_TOKEN` can push the build branch, but those automated commits do not trigger a branch-based Pages build. To automatically update the hosted site too, add a repository Actions secret named `GH_PAGES_TOKEN` containing a fine-grained personal access token restricted to this repository with **Contents: read and write**. The workflow uses it when present. See [GitHub's publishing-source guidance](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site). No token is needed just to generate and push the branch with the default workflow token. Repository rules must permit the workflow to push to `gh-pages`.
 
-Expected project URL: https://CPritchard007.github.io/maple_crossing/
+Expected project URL: https://CPritchard007.github.io/maple-crossing-ai-travel-assistant/
 
 The square logo supplies the favicon, Apple touch icon, and installable app icons. Social link previews use the wide logo at `web/images/maple-crossing-preview.png`, with Open Graph and large-image card metadata in `web/index.html`. Update the absolute metadata URLs if the hosting domain or repository path changes.
 
 To compile the same project-path build locally:
 
 ```sh
-flutter build web --release --no-wasm-dry-run --base-href /maple_crossing/
+flutter build web --release --no-wasm-dry-run --base-href /maple-crossing-ai-travel-assistant/
 ```
 
-This output must be served under `/maple_crossing/`. For a preview hosted at the server root, omit `--base-href`. Deployment uploads only compiled web files, not the repository or README screenshots. Map tiles and wait times still require their external providers. See [GitHub's custom Pages workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
+This output must be served under `/maple-crossing-ai-travel-assistant/`. For a preview hosted at the server root, omit `--base-href`. Deployment uploads only compiled web files, not the repository or README screenshots. Map tiles and wait times still require their external providers. See [GitHub's custom Pages workflow documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
 
 ## Troubleshooting
 
