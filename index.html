@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="/maple_crossing/">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="Explore Windsor–Detroit border crossings, directional wait times, and highlighted roads with Maple Crossing.">
+  <meta name="theme-color" content="#000000">
+
+  <!-- Static metadata is readable by social preview crawlers before Flutter loads. -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Maple Crossing">
+  <meta property="og:title" content="Maple Crossing">
+  <meta property="og:description" content="Explore Windsor–Detroit border crossings, directional wait times, and highlighted roads with Maple Crossing.">
+  <meta property="og:url" content="https://cpritchard007.github.io/maple_crossing/">
+  <meta property="og:image" content="https://cpritchard007.github.io/maple_crossing/images/maple-crossing-preview.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1672">
+  <meta property="og:image:height" content="941">
+  <meta property="og:image:alt" content="Maple Crossing wide logo">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Maple Crossing">
+  <meta name="twitter:description" content="Explore Windsor–Detroit border crossings, directional wait times, and highlighted roads with Maple Crossing.">
+  <meta name="twitter:image" content="https://cpritchard007.github.io/maple_crossing/images/maple-crossing-preview.png">
+  <meta name="twitter:image:alt" content="Maple Crossing wide logo">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Maple Crossing">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png?v=maple-crossing"/>
+
+  <link rel="preload" as="image" href="assets/assets/images/maple_crossing_logo_wide.png">
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; background: #000; }
+    #launch-screen {
+      position: fixed; inset: 0; z-index: 2147483647;
+      display: grid; place-items: center; background: #000; color: #fff;
+      opacity: 1; transition: opacity 600ms ease;
+    }
+    #launch-screen.ready { opacity: 0; pointer-events: none; }
+    .launch-loader {
+      position: absolute; top: 0; left: 0; right: 0;
+      height: 3px; overflow: hidden; background: #290006;
+    }
+    .launch-loader::after {
+      content: ''; display: block; width: 35%; height: 100%;
+      background: #e00020;
+      animation: launch-loading 1.4s ease-in-out infinite;
+    }
+    @keyframes launch-loading {
+      from { transform: translateX(-100%); }
+      to { transform: translateX(386%); }
+    }
+    .launch-logo { display: block; width: min(80vw, 640px); height: auto; }
+    #launch-status { position: absolute; bottom: 40px; left: 24px; right: 24px;
+      text-align: center; color: #999; font: 14px/1.5 Arial, sans-serif; }
+    @media (prefers-reduced-motion: reduce) {
+      #launch-screen { transition: none; }
+      .launch-loader::after { animation: none; width: 100%; }
+    }
+  </style>
+  <script defer src="https://unpkg.com/maplibre-gl@5.0.0/dist/maplibre-gl.js"></script>
+  <script defer src="map-workers.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@5.0.0/dist/maplibre-gl.css" rel="stylesheet">
+  <title>Maple Crossing</title>
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+  <div id="launch-screen" role="status" aria-label="Loading Maple Crossing">
+    <div class="launch-loader" aria-hidden="true"></div>
+    <img class="launch-logo" src="assets/assets/images/maple_crossing_logo_wide.png"
+         alt="Maple Crossing" fetchpriority="high">
+    <div id="launch-status" aria-live="polite"></div>
+  </div>
+  <script src="launch.js"></script>
+  <!--
+    You can customize the "flutter_bootstrap.js" script.
+    This is useful to provide a custom configuration to the Flutter loader
+    or to give the user feedback during the initialization process.
+
+    For more details:
+    * https://docs.flutter.dev/platform-integration/web/initialization
+  -->
+  <script defer src="flutter_bootstrap.js"></script>
+</body>
+</html>
