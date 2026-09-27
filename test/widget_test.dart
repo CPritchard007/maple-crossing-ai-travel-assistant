@@ -28,7 +28,13 @@ void main() {
       greaterThan(initialWidth),
     );
     expect(find.byType(AppBar), findsNothing);
-    expect(find.byType(IconButton), findsNothing);
+    expect(find.byTooltip('Dismiss build notice'), findsOneWidget);
+    await tester.tap(find.byTooltip('Dismiss build notice'));
+    await tester.pump();
+    expect(
+      find.textContaining('This application is not a finished build.'),
+      findsNothing,
+    );
     expect(
       tester.getSize(find.byType(MapOverlay)),
       tester.getSize(find.byType(Scaffold)),

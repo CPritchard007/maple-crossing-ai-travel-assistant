@@ -5,7 +5,7 @@
     "display": "standalone",
     "background_color": "#000000",
     "theme_color": "#000000",
-    "description": "Explore OpenStreetMap and place a pin with Maple Crossing.",
+    "description": "Explore Windsor\u2013Detroit border crossings, directional wait times, and highlighted roads with Maple Crossing.",
     "orientation": "any",
     "prefer_related_applications": false,
     "icons": [

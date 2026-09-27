@@ -1,0 +1,64 @@
+name: Build web and push to gh-pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gh-pages-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Optional PAT also triggers branch-based Pages publishing.
+          token: ${{ secrets.GH_PAGES_TOKEN || github.token }}
+      - name: Install Flutter
+        uses: actions/checkout@v6
+        with:
+          repository: flutter/flutter
+          ref: 3.44.4
+          path: .flutter-sdk
+          persist-credentials: false
+      - name: Add Flutter to PATH
+        run: echo "$GITHUB_WORKSPACE/.flutter-sdk/bin" >> "$GITHUB_PATH"
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+      - name: Build web app
+        run: flutter build web --release --no-wasm-dry-run --base-href /maple_crossing/
+      - name: Push compiled site to gh-pages
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          publish_dir="$RUNNER_TEMP/gh-pages-site"
+          if git ls-remote --exit-code --heads origin gh-pages; then
+            git fetch origin gh-pages
+            git worktree add -B gh-pages "$publish_dir" FETCH_HEAD
+          else
+            status=$?
+            if [ "$status" -ne 2 ]; then exit "$status"; fi
+            git worktree add --detach "$publish_dir" HEAD
+            git -C "$publish_dir" checkout --orphan gh-pages
+            git -C "$publish_dir" rm -rf .
+          fi
+          rsync -a --delete --exclude=.git build/web/ "$publish_dir/"
+          touch "$publish_dir/.nojekyll"
+          git -C "$publish_dir" config user.name 'github-actions[bot]'
+          git -C "$publish_dir" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C "$publish_dir" add --all
+          if git -C "$publish_dir" diff --cached --quiet; then
+            echo "Build output is unchanged."
+          else
+            git -C "$publish_dir" commit -m "Deploy web build from $SOURCE_SHA"
+            git -C "$publish_dir" push origin HEAD:gh-pages
+          fi

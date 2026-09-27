@@ -5,6 +5,7 @@ import 'package:maplibre/maplibre.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../components/overlay.dart';
+import '../components/build_notice.dart';
 import '../components/border_popups.dart';
 import '../data/lauzon_road.dart';
 import '../services/road_highlight_service.dart';
@@ -245,6 +246,7 @@ class _MapScreenState extends State<MapScreen>
             children: [
               widget.mapBuilder?.call(map) ?? map,
               const Positioned.fill(child: IgnorePointer(child: MapOverlay())),
+              const BuildNotice(),
               const Positioned(
                 bottom: 4,
                 right: 8,
